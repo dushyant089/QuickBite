@@ -14,7 +14,6 @@ const Auth = () => {
 
   // =========================================================
   // INPUT REFS
-  // Uncontrolled inputs = typing ke time focus stable rahega
   // =========================================================
 
   const nameRef = useRef(null);
@@ -39,7 +38,18 @@ const Auth = () => {
     mobileVerified: false,
   });
 
+  // OTP screen par email/phone inputs unmount ho jate hain.
+  // Isliye verification ke liye contact permanently state mein rakhenge.
+  const [verificationContact, setVerificationContact] = useState({
+    email: "",
+    phone: "",
+  });
+
+  // Development/testing only
   const [developmentMobileOtp, setDevelopmentMobileOtp] =
+    useState("");
+
+  const [developmentEmailOtp, setDevelopmentEmailOtp] =
     useState("");
 
   const [loading, setLoading] = useState(false);
@@ -73,6 +83,14 @@ const Auth = () => {
       .replace(/\D/g, "")
       .slice(0, 10);
 
+  const getVerificationEmail = () =>
+    String(verificationContact.email || "")
+      .trim()
+      .toLowerCase();
+
+  const getVerificationPhone = () =>
+    normalizePhone(verificationContact.phone);
+
   const readResponse = async (response) => {
     const raw = await response.text();
 
@@ -82,7 +100,9 @@ const Auth = () => {
       try {
         data = JSON.parse(raw);
       } catch {
-        data = { message: raw };
+        data = {
+          message: raw,
+        };
       }
     }
 
@@ -149,10 +169,13 @@ const Auth = () => {
       const fallbackUser = {
         email:
           data?.email ||
+          getVerificationEmail() ||
           getValue(emailRef),
+
         role:
           data?.role ||
           "CUSTOMER",
+
         loggedIn: true,
       };
 
@@ -163,7 +186,9 @@ const Auth = () => {
 
       localStorage.setItem(
         "quickbite-user-role",
-        String(fallbackUser.role).toUpperCase()
+        String(
+          fallbackUser.role
+        ).toUpperCase()
       );
     }
 
@@ -222,7 +247,9 @@ const Auth = () => {
       const cleanPhone = normalizePhone(phone);
 
       if (!cleanEmail) {
-        throw new Error("Email is required.");
+        throw new Error(
+          "Email is required."
+        );
       }
 
       if (cleanPhone.length !== 10) {
@@ -230,6 +257,14 @@ const Auth = () => {
           "Please enter a valid 10-digit mobile number."
         );
       }
+
+      // IMPORTANT:
+      // OTP screen par input refs unmount ho jayenge.
+      // Isliye email + phone ko state mein save kar rahe hain.
+      setVerificationContact({
+        email: cleanEmail,
+        phone: cleanPhone,
+      });
 
       // -------------------------------------------------------
       // MOBILE OTP
@@ -239,9 +274,11 @@ const Auth = () => {
         `${API_URL}/send-mobile-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email: cleanEmail,
             phone: cleanPhone,
@@ -269,9 +306,11 @@ const Auth = () => {
         `${API_URL}/send-email-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email: cleanEmail,
           }),
@@ -290,8 +329,19 @@ const Auth = () => {
         );
       }
 
-      setValue(emailRef, cleanEmail);
-      setValue(phoneRef, cleanPhone);
+      // -------------------------------------------------------
+      // RESTORE VALUES
+      // -------------------------------------------------------
+
+      setValue(
+        emailRef,
+        cleanEmail
+      );
+
+      setValue(
+        phoneRef,
+        cleanPhone
+      );
 
       setVerificationData({
         emailVerified:
@@ -303,9 +353,23 @@ const Auth = () => {
           false,
       });
 
+      // -------------------------------------------------------
+      // DEVELOPMENT MOBILE OTP
+      // -------------------------------------------------------
+
       setDevelopmentMobileOtp(
         mobileResult.data?.developmentOtp ||
           mobileResult.data?.otp ||
+          ""
+      );
+
+      // -------------------------------------------------------
+      // DEVELOPMENT EMAIL OTP
+      // -------------------------------------------------------
+
+      setDevelopmentEmailOtp(
+        emailResult.data?.developmentOtp ||
+          emailResult.data?.otp ||
           ""
       );
 
@@ -350,6 +414,7 @@ const Auth = () => {
       setError(
         "Please enter email and password."
       );
+
       return;
     }
 
@@ -360,9 +425,11 @@ const Auth = () => {
         `${API_URL}/login`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
             password,
@@ -375,11 +442,39 @@ const Auth = () => {
 
       const data = result.data;
 
-      if (
+      // -------------------------------------------------------
+      // ROLE CHECK
+      // -------------------------------------------------------
+
+      const returnedRole =
+        String(
+          data?.role ||
+            data?.user?.role ||
+            data?.data?.role ||
+            data?.data?.user?.role ||
+            ""
+        ).toUpperCase();
+
+      // IMPORTANT:
+      // Admin aur Restaurant Owner ko customer OTP flow
+      // mein nahi bhejna hai.
+      const isCustomer =
+        !returnedRole ||
+        returnedRole === "CUSTOMER";
+
+      const verificationRequired =
         data?.verificationRequired ||
         data?.requiresVerification ||
         data?.emailVerified === false ||
-        data?.mobileVerified === false
+        data?.mobileVerified === false;
+
+      // -------------------------------------------------------
+      // CUSTOMER VERIFICATION ONLY
+      // -------------------------------------------------------
+
+      if (
+        isCustomer &&
+        verificationRequired
       ) {
         const returnedEmail =
           data?.email ||
@@ -402,29 +497,42 @@ const Auth = () => {
           data?.user?.mobileVerified ??
           false;
 
+        const cleanReturnedEmail =
+          String(returnedEmail || "")
+            .trim()
+            .toLowerCase();
+
+        const cleanReturnedPhone =
+          normalizePhone(returnedPhone);
+
         setValue(
           emailRef,
-          returnedEmail
+          cleanReturnedEmail
         );
 
         setValue(
           phoneRef,
-          normalizePhone(returnedPhone)
+          cleanReturnedPhone
         );
+
+        setVerificationContact({
+          email: cleanReturnedEmail,
+          phone: cleanReturnedPhone,
+        });
 
         setVerificationData({
           emailVerified,
           mobileVerified,
         });
 
-        if (returnedPhone) {
+        if (cleanReturnedPhone) {
           setMessage(
-            "Your account needs verification."
+            "Your customer account needs verification."
           );
 
           await startVerification(
-            returnedEmail,
-            returnedPhone,
+            cleanReturnedEmail,
+            cleanReturnedPhone,
             {
               emailVerified,
               mobileVerified,
@@ -440,6 +548,10 @@ const Auth = () => {
 
         return;
       }
+
+      // -------------------------------------------------------
+      // ADMIN / OWNER / NORMAL LOGIN
+      // -------------------------------------------------------
 
       if (!result.ok) {
         throw new Error(
@@ -509,6 +621,7 @@ const Auth = () => {
       setError(
         "Please fill all required fields."
       );
+
       return;
     }
 
@@ -516,6 +629,7 @@ const Auth = () => {
       setError(
         "Please enter a valid 10-digit mobile number."
       );
+
       return;
     }
 
@@ -523,6 +637,7 @@ const Auth = () => {
       setError(
         "Password must be at least 6 characters."
       );
+
       return;
     }
 
@@ -533,9 +648,11 @@ const Auth = () => {
         `${API_URL}/signup`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             name,
             email,
@@ -559,8 +676,20 @@ const Auth = () => {
         );
       }
 
-      setValue(emailRef, email);
-      setValue(phoneRef, phone);
+      setValue(
+        emailRef,
+        email
+      );
+
+      setValue(
+        phoneRef,
+        phone
+      );
+
+      setVerificationContact({
+        email,
+        phone,
+      });
 
       await startVerification(
         data?.email ||
@@ -607,10 +736,18 @@ const Auth = () => {
     clearAlerts();
 
     const email =
-      getValue(emailRef).toLowerCase();
+      getVerificationEmail();
 
     const otp =
       getValue(mobileOtpRef);
+
+    if (!email) {
+      setError(
+        "Email is required for verification."
+      );
+
+      return;
+    }
 
     if (!otp) {
       setError(
@@ -639,9 +776,11 @@ const Auth = () => {
         `${API_URL}/verify-mobile-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
             otp,
@@ -700,10 +839,18 @@ const Auth = () => {
     clearAlerts();
 
     const email =
-      getValue(emailRef).toLowerCase();
+      getVerificationEmail();
 
     const otp =
       getValue(emailOtpRef);
+
+    if (!email) {
+      setError(
+        "Email is required for verification."
+      );
+
+      return;
+    }
 
     if (!otp) {
       setError(
@@ -732,9 +879,11 @@ const Auth = () => {
         `${API_URL}/verify-email-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
             otp,
@@ -789,7 +938,15 @@ const Auth = () => {
     clearAlerts();
 
     const email =
-      getValue(emailRef).toLowerCase();
+      getVerificationEmail();
+
+    if (!email) {
+      setError(
+        "Email is required for verification."
+      );
+
+      return;
+    }
 
     if (
       !verificationData.emailVerified ||
@@ -798,6 +955,7 @@ const Auth = () => {
       setError(
         "Please verify both email and mobile number first."
       );
+
       return;
     }
 
@@ -808,9 +966,11 @@ const Auth = () => {
         `${API_URL}/complete-verification`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
           }),
@@ -829,7 +989,9 @@ const Auth = () => {
         );
       }
 
-      saveUserSession(result.data);
+      saveUserSession(
+        result.data
+      );
 
       setMessage(
         "Account verified successfully."
@@ -861,17 +1023,19 @@ const Auth = () => {
     clearAlerts();
 
     const email =
-      getValue(emailRef).toLowerCase();
+      getVerificationEmail();
 
     const phone =
-      normalizePhone(
-        phoneRef.current?.value
-      );
+      getVerificationPhone();
 
-    if (!email || phone.length !== 10) {
+    if (
+      !email ||
+      phone.length !== 10
+    ) {
       setError(
         "Valid email and mobile number are required."
       );
+
       return;
     }
 
@@ -882,9 +1046,11 @@ const Auth = () => {
         `${API_URL}/send-mobile-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
             phone,
@@ -935,10 +1101,13 @@ const Auth = () => {
     clearAlerts();
 
     const email =
-      getValue(emailRef).toLowerCase();
+      getVerificationEmail();
 
     if (!email) {
-      setError("Email is required.");
+      setError(
+        "Email is required."
+      );
+
       return;
     }
 
@@ -949,9 +1118,11 @@ const Auth = () => {
         `${API_URL}/send-email-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
           }),
@@ -969,6 +1140,14 @@ const Auth = () => {
             "Unable to resend email OTP."
         );
       }
+
+      // Development/testing:
+      // backend response se email OTP screen par show.
+      setDevelopmentEmailOtp(
+        result.data?.developmentOtp ||
+          result.data?.otp ||
+          ""
+      );
 
       setMessage(
         "Email OTP resent successfully."
@@ -1016,9 +1195,11 @@ const Auth = () => {
         `${API_URL}/forgot-password`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
           }),
@@ -1093,9 +1274,11 @@ const Auth = () => {
         `${API_URL}/verify-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
             otp,
@@ -1145,7 +1328,10 @@ const Auth = () => {
       getValue(emailRef).toLowerCase();
 
     if (!email) {
-      setError("Email is required.");
+      setError(
+        "Email is required."
+      );
+
       return;
     }
 
@@ -1156,9 +1342,11 @@ const Auth = () => {
         `${API_URL}/resend-otp`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
           }),
@@ -1220,6 +1408,7 @@ const Auth = () => {
       setError(
         "Please complete all reset fields."
       );
+
       return;
     }
 
@@ -1240,9 +1429,11 @@ const Auth = () => {
         `${API_URL}/reset-password`,
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
             email,
             otp,
@@ -1314,17 +1505,10 @@ const Auth = () => {
       font: inherit;
     }
 
-    /* =======================================================
-       MAIN
-       ======================================================= */
-
     .qb-shell {
       min-height: 100vh;
-
       display: flex;
-
       overflow: hidden;
-
       position: relative;
 
       background:
@@ -1343,19 +1527,11 @@ const Auth = () => {
         #f8fafc;
     }
 
-    /* =======================================================
-       LEFT HERO
-       ======================================================= */
-
     .qb-hero {
       width: 48%;
-
       min-height: 100vh;
-
       position: relative;
-
       overflow: hidden;
-
       color: #fff;
 
       background:
@@ -1381,9 +1557,7 @@ const Auth = () => {
 
     .qb-hero-grid {
       position: absolute;
-
       inset: 0;
-
       opacity: 0.13;
 
       background-image:
@@ -1410,13 +1584,10 @@ const Auth = () => {
 
     .qb-orb {
       position: absolute;
-
       width: 540px;
       height: 540px;
-
       right: -180px;
       top: 80px;
-
       border-radius: 50%;
 
       border:
@@ -1429,11 +1600,8 @@ const Auth = () => {
 
     .qb-orb::before {
       content: "";
-
       position: absolute;
-
       inset: 76px;
-
       border-radius: 50%;
 
       border:
@@ -1442,39 +1610,27 @@ const Auth = () => {
 
     .qb-hero-inner {
       position: relative;
-
       z-index: 3;
-
       min-height: 100vh;
-
-      padding:
-        48px 52px;
+      padding: 48px 52px;
 
       display: flex;
-
       flex-direction: column;
-
       justify-content: space-between;
     }
 
-    /* BRAND */
-
     .qb-brand {
       display: flex;
-
       align-items: center;
-
       gap: 13px;
     }
 
     .qb-brand-icon {
       width: 52px;
       height: 52px;
-
       border-radius: 17px;
 
       display: flex;
-
       align-items: center;
       justify-content: center;
 
@@ -1493,34 +1649,21 @@ const Auth = () => {
 
     .qb-brand-text {
       font-size: 29px;
-
       font-weight: 950;
-
       letter-spacing: -1px;
     }
 
-    /* HERO PILL */
-
     .qb-small-pill {
       display: inline-flex;
-
       align-items: center;
-
       gap: 9px;
-
-      padding:
-        10px 15px;
-
+      padding: 10px 15px;
       border-radius: 999px;
 
       color: #fed7aa;
-
       font-size: 12px;
-
       font-weight: 950;
-
       letter-spacing: 1.05px;
-
       text-transform: uppercase;
 
       border:
@@ -1529,37 +1672,28 @@ const Auth = () => {
       background:
         rgba(255,255,255,0.055);
 
-      backdrop-filter:
-        blur(15px);
+      backdrop-filter: blur(15px);
     }
 
     .qb-live-dot {
       width: 8px;
       height: 8px;
-
       border-radius: 50%;
-
       background: #fb923c;
 
       box-shadow:
         0 0 14px rgba(251,146,60,0.8);
     }
 
-    /* HERO TITLE */
-
     .qb-main-title {
-      margin:
-        25px 0 19px;
-
+      margin: 25px 0 19px;
       max-width: 700px;
 
       font-size:
         clamp(50px, 5.8vw, 78px);
 
       line-height: 0.97;
-
       letter-spacing: -4.2px;
-
       font-weight: 950;
     }
 
@@ -1572,85 +1706,57 @@ const Auth = () => {
         );
 
       -webkit-background-clip: text;
-
       background-clip: text;
-
       color: transparent;
     }
 
     .qb-main-copy {
       max-width: 540px;
-
       margin: 0;
-
       color: #a1a1aa;
-
       line-height: 1.8;
-
       font-size: 18px;
     }
 
-    /* FEATURES */
-
     .qb-feature-row {
       margin-top: 36px;
-
       display: flex;
-
       flex-wrap: wrap;
-
       gap: 12px;
-
       max-width: 640px;
     }
 
     .qb-feature {
-      padding:
-        16px 17px;
-
+      padding: 16px 17px;
       border:
         1px solid rgba(255,255,255,0.08);
 
       border-radius: 18px;
-
       background:
         rgba(255,255,255,0.045);
 
-      backdrop-filter:
-        blur(14px);
-
+      backdrop-filter: blur(14px);
       min-width: 145px;
     }
 
     .qb-feature-icon {
       margin-bottom: 8px;
-
       font-size: 21px;
     }
 
     .qb-feature-title {
       color: #e4e4e7;
-
       font-size: 14px;
-
       font-weight: 900;
     }
 
-    /* FLOATING FOOD CARD */
-
     .qb-food-card {
       position: absolute;
-
       z-index: 4;
-
       right: 8%;
-
       bottom: 15%;
-
       width: 198px;
-
       padding: 16px;
-
       border-radius: 26px;
 
       border:
@@ -1666,22 +1772,16 @@ const Auth = () => {
       box-shadow:
         0 25px 70px rgba(0,0,0,0.34);
 
-      backdrop-filter:
-        blur(25px);
-
-      transform:
-        rotate(5deg);
+      backdrop-filter: blur(25px);
+      transform: rotate(5deg);
     }
 
     .qb-food-image {
       height: 130px;
-
       border-radius: 20px;
 
       display: flex;
-
       align-items: center;
-
       justify-content: center;
 
       font-size: 76px;
@@ -1706,61 +1806,39 @@ const Auth = () => {
 
     .qb-food-name {
       color: #fafafa;
-
       font-size: 14px;
-
       font-weight: 950;
     }
 
     .qb-food-meta {
       margin-top: 4px;
-
       color: #a1a1aa;
-
       font-size: 12px;
     }
 
-    /* FOOTER */
-
     .qb-hero-footer {
       display: flex;
-
       justify-content: space-between;
-
       gap: 18px;
-
       color: #71717a;
-
       font-size: 13px;
     }
 
-    /* =======================================================
-       RIGHT SIDE
-       ======================================================= */
-
     .qb-panel {
       width: 52%;
-
       min-height: 100vh;
-
       padding: 28px;
 
       display: flex;
-
       align-items: center;
-
       justify-content: center;
     }
 
     .qb-card {
       position: relative;
-
       width: 100%;
-
       max-width: 600px;
-
       padding: 46px;
-
       border-radius: 36px;
 
       background:
@@ -1772,21 +1850,16 @@ const Auth = () => {
       box-shadow:
         0 38px 110px rgba(15,23,42,0.13);
 
-      backdrop-filter:
-        blur(26px);
+      backdrop-filter: blur(26px);
     }
 
     .qb-card::before {
       content: "";
-
       position: absolute;
-
       width: 190px;
       height: 190px;
-
       right: -70px;
       top: -70px;
-
       border-radius: 50%;
 
       background:
@@ -1799,82 +1872,49 @@ const Auth = () => {
       pointer-events: none;
     }
 
-    /* MOBILE BRAND */
-
     .qb-mobile-brand {
       display: none;
     }
 
-    /* HEADER */
-
     .qb-eyebrow {
       margin-bottom: 11px;
-
       color: #ea580c;
-
       font-size: 12px;
-
       font-weight: 950;
-
       letter-spacing: 1.5px;
-
       text-transform: uppercase;
     }
 
     .qb-title {
       margin: 0;
-
       max-width: 540px;
-
       color: #09090b;
-
       font-size: 45px;
-
       line-height: 1.05;
-
       letter-spacing: -2.2px;
-
       font-weight: 950;
     }
 
     .qb-subtitle {
-      margin:
-        14px 0 0;
-
+      margin: 14px 0 0;
       max-width: 535px;
-
       color: #52525b;
-
       font-size: 16px;
-
       line-height: 1.8;
     }
 
-    /* =======================================================
-       LABELS + INPUTS
-       ======================================================= */
-
     .qb-label {
       display: block;
-
-      margin:
-        21px 0 9px;
-
+      margin: 21px 0 9px;
       color: #27272a;
-
       font-size: 13px;
-
       font-weight: 950;
     }
 
     .qb-input {
       width: 100%;
-
       height: 61px;
-
-      padding:
-        0 19px;
-
+      padding: 0 19px;
       border-radius: 17px;
 
       border:
@@ -1888,9 +1928,7 @@ const Auth = () => {
         );
 
       color: #18181b;
-
       font-size: 16px;
-
       outline: none;
 
       transition:
@@ -1906,7 +1944,6 @@ const Auth = () => {
 
     .qb-input:focus {
       border-color: #fb923c;
-
       background: #ffffff;
 
       box-shadow:
@@ -1916,41 +1953,25 @@ const Auth = () => {
 
     .qb-input::placeholder {
       color: #a1a1aa;
-
       font-size: 15px;
     }
 
     .qb-input-otp {
       text-align: center;
-
       letter-spacing: 8px;
-
       font-size: 22px;
-
       font-weight: 950;
     }
 
-    /* =======================================================
-       BUTTONS
-       ======================================================= */
-
     .qb-primary {
       width: 100%;
-
       height: 61px;
-
       margin-top: 24px;
-
       border: none;
-
       border-radius: 18px;
-
       color: white;
-
       cursor: pointer;
-
       font-size: 16px;
-
       font-weight: 950;
 
       background:
@@ -1979,147 +2000,97 @@ const Auth = () => {
 
     .qb-primary:disabled {
       opacity: 0.55;
-
       cursor: not-allowed;
     }
 
     .qb-secondary {
       width: 100%;
-
       height: 54px;
-
       margin-top: 11px;
 
       border:
         1px solid #fed7aa;
 
       border-radius: 16px;
-
       color: #c2410c;
-
       background: #fff7ed;
-
       font-size: 14px;
-
       font-weight: 900;
-
       cursor: pointer;
     }
 
     .qb-link {
       padding: 0;
-
       border: none;
-
       background: transparent;
-
       color: #ea580c;
-
       cursor: pointer;
-
       font-size: 14px;
-
       font-weight: 950;
     }
 
     .qb-center {
       margin-top: 23px;
-
       text-align: center;
-
       color: #71717a;
-
       font-size: 14px;
     }
 
-    /* =======================================================
-       ALERTS
-       ======================================================= */
-
     .qb-alert {
       margin-top: 18px;
-
-      padding:
-        15px 16px;
-
+      padding: 15px 16px;
       border-radius: 16px;
-
       font-size: 14px;
-
       line-height: 1.6;
-
       font-weight: 800;
     }
 
     .qb-error {
       color: #be123c;
-
       background: #fff1f2;
-
       border:
         1px solid #fecdd3;
     }
 
     .qb-success {
       color: #166534;
-
       background: #f0fdf4;
-
       border:
         1px solid #bbf7d0;
     }
 
-    /* =======================================================
-       OTP STATUS
-       ======================================================= */
-
     .qb-status-grid {
       display: grid;
-
-      grid-template-columns:
-        repeat(2, minmax(0,1fr));
-
+      grid-template-columns: repeat(2, minmax(0,1fr));
       gap: 10px;
-
       margin-top: 20px;
     }
 
     .qb-status {
       padding: 15px;
-
       border-radius: 17px;
-
       background: #fafafa;
-
       border:
         1px solid #e4e4e7;
     }
 
     .qb-status.verified {
       background: #f0fdf4;
-
       border-color: #bbf7d0;
     }
 
     .qb-status-label {
       color: #71717a;
-
       font-size: 11px;
-
       font-weight: 950;
-
       letter-spacing: 0.8px;
-
       text-transform: uppercase;
     }
 
     .qb-status-value {
       margin-top: 6px;
-
       color: #b45309;
-
       font-size: 14px;
-
       font-weight: 950;
     }
 
@@ -2127,15 +2098,9 @@ const Auth = () => {
       color: #15803d;
     }
 
-    /* =======================================================
-       DEVELOPMENT OTP
-       ======================================================= */
-
     .qb-development {
       margin-top: 15px;
-
       padding: 17px;
-
       border-radius: 18px;
 
       border:
@@ -2151,53 +2116,35 @@ const Auth = () => {
 
     .qb-development-row {
       display: flex;
-
       justify-content: space-between;
-
       align-items: center;
-
       gap: 18px;
     }
 
     .qb-development-label {
       color: #c2410c;
-
       font-size: 11px;
-
       font-weight: 950;
-
       letter-spacing: 0.8px;
-
       text-transform: uppercase;
     }
 
     .qb-development-note {
       margin-top: 5px;
-
       color: #92400e;
-
       font-size: 12px;
     }
 
     .qb-development-code {
       color: #9a3412;
-
       font-size: 27px;
-
       font-weight: 950;
-
       letter-spacing: 5px;
     }
 
-    /* =======================================================
-       OTP BOX
-       ======================================================= */
-
     .qb-otp-box {
       margin-top: 14px;
-
       padding: 19px;
-
       border-radius: 21px;
 
       border:
@@ -2212,22 +2159,14 @@ const Auth = () => {
 
     .qb-complete {
       margin-top: 14px;
-
       padding: 20px;
-
       border-radius: 20px;
-
       text-align: center;
-
       background: #f0fdf4;
 
       border:
         1px solid #bbf7d0;
     }
-
-    /* =======================================================
-       TABLET
-       ======================================================= */
 
     @media (max-width: 1100px) {
       .qb-hero-inner {
@@ -2240,9 +2179,7 @@ const Auth = () => {
 
       .qb-food-card {
         right: 6%;
-
         bottom: 20%;
-
         transform:
           scale(0.92)
           rotate(5deg);
@@ -2257,10 +2194,6 @@ const Auth = () => {
       }
     }
 
-    /* =======================================================
-       MOBILE
-       ======================================================= */
-
     @media (max-width: 900px) {
       .qb-shell {
         display: block;
@@ -2272,46 +2205,32 @@ const Auth = () => {
 
       .qb-panel {
         width: 100%;
-
         min-height: 100vh;
-
         padding: 14px;
-
         align-items: flex-start;
       }
 
       .qb-card {
         max-width: 680px;
-
         margin: 0 auto;
-
-        padding:
-          29px 21px;
-
+        padding: 29px 21px;
         border-radius: 28px;
       }
 
       .qb-mobile-brand {
         display: flex;
-
         align-items: center;
-
         gap: 10px;
-
         margin-bottom: 29px;
       }
 
       .qb-mobile-logo {
         width: 44px;
         height: 44px;
-
         display: flex;
-
         align-items: center;
         justify-content: center;
-
         border-radius: 14px;
-
         font-size: 21px;
 
         background:
@@ -2327,9 +2246,7 @@ const Auth = () => {
 
       .qb-mobile-name {
         color: #09090b;
-
         font-size: 25px;
-
         font-weight: 950;
       }
 
@@ -2342,19 +2259,13 @@ const Auth = () => {
       }
     }
 
-    /* =======================================================
-       SMALL MOBILE
-       ======================================================= */
-
     @media (max-width: 520px) {
       .qb-panel {
         padding: 9px;
       }
 
       .qb-card {
-        padding:
-          24px 16px;
-
+        padding: 24px 16px;
         border-radius: 24px;
 
         box-shadow:
@@ -2371,13 +2282,11 @@ const Auth = () => {
 
       .qb-title {
         font-size: 31px;
-
         letter-spacing: -1.1px;
       }
 
       .qb-subtitle {
         font-size: 14px;
-
         line-height: 1.7;
       }
 
@@ -2387,15 +2296,12 @@ const Auth = () => {
 
       .qb-label {
         font-size: 13px;
-
         margin-top: 19px;
       }
 
       .qb-input {
         height: 57px;
-
         border-radius: 15px;
-
         font-size: 16px;
       }
 
@@ -2405,15 +2311,12 @@ const Auth = () => {
 
       .qb-primary {
         height: 57px;
-
         border-radius: 15px;
-
         font-size: 15px;
       }
 
       .qb-secondary {
         height: 52px;
-
         font-size: 14px;
       }
 
@@ -2431,7 +2334,6 @@ const Auth = () => {
 
       .qb-development-row {
         flex-direction: column;
-
         align-items: flex-start;
       }
 
@@ -2441,7 +2343,6 @@ const Auth = () => {
 
       .qb-input-otp {
         letter-spacing: 6px;
-
         font-size: 21px;
       }
     }
@@ -2682,10 +2583,14 @@ const Auth = () => {
       <Header
         eyebrow="SECURITY CHECK"
         title="Let's secure your account."
-        subtitle="Complete both verification steps to unlock your QuickBite account."
+        subtitle="Complete both verification steps to unlock your QuickBite customer account."
       />
 
       <Alerts />
+
+      {/* =====================================================
+          DEVELOPMENT MOBILE OTP
+      ====================================================== */}
 
       {developmentMobileOtp ? (
         <div className="qb-development">
@@ -2706,6 +2611,34 @@ const Auth = () => {
           </div>
         </div>
       ) : null}
+
+      {/* =====================================================
+          DEVELOPMENT EMAIL OTP
+      ====================================================== */}
+
+      {developmentEmailOtp ? (
+        <div className="qb-development">
+          <div className="qb-development-row">
+            <div>
+              <div className="qb-development-label">
+                Development email OTP
+              </div>
+
+              <div className="qb-development-note">
+                This OTP is also being sent to your Gmail.
+              </div>
+            </div>
+
+            <div className="qb-development-code">
+              {developmentEmailOtp}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* =====================================================
+          VERIFICATION STATUS
+      ====================================================== */}
 
       <div className="qb-status-grid">
         <div
@@ -2745,6 +2678,10 @@ const Auth = () => {
         </div>
       </div>
 
+      {/* =====================================================
+          MOBILE OTP
+      ====================================================== */}
+
       {!verificationData.mobileVerified ? (
         <div className="qb-otp-box">
           <label className="qb-label">
@@ -2768,6 +2705,7 @@ const Auth = () => {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
+
                 verifyMobileOtp();
               }
             }}
@@ -2795,11 +2733,28 @@ const Auth = () => {
         </div>
       ) : null}
 
+      {/* =====================================================
+          EMAIL OTP
+      ====================================================== */}
+
       {!verificationData.emailVerified ? (
         <div className="qb-otp-box">
           <label className="qb-label">
             ✉️ Email OTP
           </label>
+
+          <div
+            style={{
+              marginBottom: 10,
+              color: "#71717a",
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            Check your Gmail for the OTP.
+            For development, the OTP is also
+            shown above.
+          </div>
 
           <input
             ref={emailOtpRef}
@@ -2818,6 +2773,7 @@ const Auth = () => {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
+
                 verifyEmailOtp();
               }
             }}
@@ -2844,6 +2800,10 @@ const Auth = () => {
           </button>
         </div>
       ) : null}
+
+      {/* =====================================================
+          COMPLETE VERIFICATION
+      ====================================================== */}
 
       {verificationData.mobileVerified &&
       verificationData.emailVerified ? (
@@ -2908,60 +2868,59 @@ const Auth = () => {
   // PHONE MISSING SCREEN
   // =========================================================
 
-  const VerificationMissingPhone =
-    () => (
-      <>
-        <Header
-          eyebrow="VERIFICATION"
-          title="One more step."
-          subtitle="Your account needs verification before you can continue."
-        />
+  const VerificationMissingPhone = () => (
+    <>
+      <Header
+        eyebrow="VERIFICATION"
+        title="One more step."
+        subtitle="Your account needs verification before you can continue."
+      />
 
-        <Alerts />
+      <Alerts />
 
+      <div
+        className="qb-otp-box"
+        style={{
+          marginTop: 20,
+          background: "#fff7ed",
+          borderColor: "#fed7aa",
+        }}
+      >
         <div
-          className="qb-otp-box"
           style={{
-            marginTop: 20,
-            background: "#fff7ed",
-            borderColor: "#fed7aa",
+            color: "#9a3412",
+            fontSize: 16,
+            fontWeight: 950,
           }}
         >
-          <div
-            style={{
-              color: "#9a3412",
-              fontSize: 16,
-              fontWeight: 950,
-            }}
-          >
-            Mobile number unavailable
-          </div>
-
-          <div
-            style={{
-              marginTop: 8,
-              color: "#9a3412",
-              fontSize: 13,
-              lineHeight: 1.7,
-            }}
-          >
-            The server did not return the
-            registered mobile number for
-            this account.
-          </div>
+          Mobile number unavailable
         </div>
 
-        <button
-          type="button"
-          className="qb-primary"
-          onClick={() =>
-            goTo("/login")
-          }
+        <div
+          style={{
+            marginTop: 8,
+            color: "#9a3412",
+            fontSize: 13,
+            lineHeight: 1.7,
+          }}
         >
-          Back to login
-        </button>
-      </>
-    );
+          The server did not return the
+          registered mobile number for
+          this account.
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="qb-primary"
+        onClick={() =>
+          goTo("/login")
+        }
+      >
+        Back to login
+      </button>
+    </>
+  );
 
   // =========================================================
   // FORGOT PASSWORD
@@ -3083,6 +3042,7 @@ const Auth = () => {
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
+
             verifyResetOtp();
           }
         }}

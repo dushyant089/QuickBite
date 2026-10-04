@@ -5,11 +5,9 @@ import com.example.demo.model.User;
 import com.example.demo.repository.PasswordResetTokenRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.security.JwtUtil;
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
+import com.example.demo.service.EmailService;
+
 import org.springframework.http.ResponseEntity;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,23 +27,22 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JavaMailSender mailSender;
+    private final EmailService emailService;
     private final JwtUtil jwtUtil;
 
-    private final SecureRandom secureRandom =
-            new SecureRandom();
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthController(
             UserRepository userRepository,
             PasswordResetTokenRepository tokenRepository,
             PasswordEncoder passwordEncoder,
-            JavaMailSender mailSender,
+            EmailService emailService,
             JwtUtil jwtUtil
     ) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
-        this.mailSender = mailSender;
+        this.emailService = emailService;
         this.jwtUtil = jwtUtil;
     }
 
@@ -59,104 +56,55 @@ public class AuthController {
     ) {
 
         if (request == null) {
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Request data is required."
-                            )
-                    );
+            return badRequest("Request data is required.");
         }
 
         if (request.getName() == null ||
                 request.getName().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Name is required."
-                            )
-                    );
+            return badRequest("Name is required.");
         }
 
         if (request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email is required."
-                            )
-                    );
+            return badRequest("Email is required.");
         }
 
         if (request.getPassword() == null ||
                 request.getPassword().length() < 6) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Password must be at least 6 characters."
-                            )
-                    );
+            return badRequest(
+                    "Password must be at least 6 characters."
+            );
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        String phone =
-                request.getPhone() == null
-                        ? ""
-                        : request.getPhone()
-                                .replaceAll("\\D", "");
+        String phone = request.getPhone() == null
+                ? ""
+                : request.getPhone().replaceAll("\\D", "");
 
-        if (!phone.isBlank() &&
-                phone.length() != 10) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Please enter a valid 10-digit mobile number."
-                            )
-                    );
+        if (!phone.isBlank() && phone.length() != 10) {
+            return badRequest(
+                    "Please enter a valid 10-digit mobile number."
+            );
         }
 
-        // Email uniqueness
         if (userRepository.existsByEmail(email)) {
-
             return ResponseEntity.status(409)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email already registered."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message", "Email already registered."
+                    ));
         }
 
         User user = new User();
 
-        user.setName(
-                request.getName().trim()
-        );
-
+        user.setName(request.getName().trim());
         user.setEmail(email);
 
         user.setPassword(
-                passwordEncoder.encode(
-                        request.getPassword()
-                )
+                passwordEncoder.encode(request.getPassword())
         );
 
         user.setPhone(phone);
@@ -167,14 +115,10 @@ public class AuthController {
                         : request.getAddress().trim()
         );
 
-        /*
-         * Public signup always creates CUSTOMER.
-         */
+        // Public signup creates CUSTOMER.
         user.setRole("CUSTOMER");
 
-        /*
-         * New account must be verified.
-         */
+        // New account requires verification.
         user.setEmailVerified(false);
         user.setMobileVerified(false);
 
@@ -184,8 +128,7 @@ public class AuthController {
         user.setMobileOtp(null);
         user.setMobileOtpExpiry(null);
 
-        User savedUser =
-                userRepository.save(user);
+        User savedUser = userRepository.save(user);
 
         return ResponseEntity.ok(
                 createUserResponse(savedUser)
@@ -202,63 +145,34 @@ public class AuthController {
     ) {
 
         if (request == null) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Login data is required."
-                            )
-                    );
+            return badRequest("Login data is required.");
         }
 
         if (request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email is required."
-                            )
-                    );
+            return badRequest("Email is required.");
         }
 
         if (request.getPassword() == null ||
                 request.getPassword().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Password is required."
-                            )
-                    );
+            return badRequest("Password is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
         if (user == null) {
-
             return ResponseEntity.status(401)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Invalid email or password."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "Invalid email or password."
+                    ));
         }
 
         boolean passwordMatches =
@@ -268,81 +182,41 @@ public class AuthController {
                 );
 
         if (!passwordMatches) {
-
             return ResponseEntity.status(401)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Invalid email or password."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "Invalid email or password."
+                    ));
         }
 
-        boolean emailVerified =
-                user.isEmailVerified();
+        boolean emailVerified = user.isEmailVerified();
+        boolean mobileVerified = user.isMobileVerified();
 
-        boolean mobileVerified =
-                user.isMobileVerified();
-
-        /*
-         * Do not allow normal login until
-         * both verifications are complete.
-         */
-        if (!emailVerified ||
-                !mobileVerified) {
+        if (!emailVerified || !mobileVerified) {
 
             Map<String, Object> response =
                     new HashMap<>();
 
-            response.put(
-                    "success",
-                    false
-            );
-
-            response.put(
-                    "verificationRequired",
-                    true
-            );
+            response.put("success", false);
+            response.put("verificationRequired", true);
 
             response.put(
                     "message",
                     "Please verify your email and mobile number."
             );
 
-            response.put(
-                    "email",
-                    user.getEmail()
-            );
+            response.put("email", user.getEmail());
+            response.put("phone", user.getPhone());
 
-            response.put(
-                    "phone",
-                    user.getPhone()
-            );
+            response.put("emailVerified", emailVerified);
+            response.put("mobileVerified", mobileVerified);
 
-            response.put(
-                    "emailVerified",
-                    emailVerified
-            );
-
-            response.put(
-                    "mobileVerified",
-                    mobileVerified
-            );
-
-            response.put(
-                    "user",
-                    createUserResponse(user)
-            );
+            response.put("user", createUserResponse(user));
 
             return ResponseEntity.ok(response);
         }
 
-        /*
-         * Both email + mobile verified.
-         *
-         * Generate JWT token here.
-         */
         return ResponseEntity.ok(
                 createLoginResponse(user)
         );
@@ -351,16 +225,6 @@ public class AuthController {
     // =========================================================
     // SEND MOBILE OTP
     // DEVELOPMENT MODE
-    // =========================================================
-    //
-    // IMPORTANT:
-    // We DO NOT call findByPhone().
-    //
-    // Earlier this was causing:
-    // Query did not return a unique result:
-    // 3 results were returned
-    //
-    // We now find the account by EMAIL.
     // =========================================================
 
     @PostMapping("/send-mobile-otp")
@@ -371,172 +235,84 @@ public class AuthController {
         try {
 
             if (request == null) {
-
-                return ResponseEntity.badRequest()
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "Request data is required."
-                                )
-                        );
+                return badRequest("Request data is required.");
             }
 
             if (request.getEmail() == null ||
                     request.getEmail().isBlank()) {
-
-                return ResponseEntity.badRequest()
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "Email is required."
-                                )
-                        );
+                return badRequest("Email is required.");
             }
 
             if (request.getPhone() == null ||
                     request.getPhone().isBlank()) {
-
-                return ResponseEntity.badRequest()
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "Mobile number is required."
-                                )
-                        );
+                return badRequest("Mobile number is required.");
             }
 
-            String email =
-                    request.getEmail()
-                            .trim()
-                            .toLowerCase();
+            String email = request.getEmail()
+                    .trim()
+                    .toLowerCase();
 
-            String cleanPhone =
-                    request.getPhone()
-                            .replaceAll("\\D", "");
+            String cleanPhone = request.getPhone()
+                    .replaceAll("\\D", "");
 
             if (cleanPhone.length() != 10) {
-
-                return ResponseEntity.badRequest()
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "Please enter a valid 10-digit mobile number."
-                                )
-                        );
+                return badRequest(
+                        "Please enter a valid 10-digit mobile number."
+                );
             }
 
-            /*
-             * FIX:
-             * Find user using email.
-             *
-             * DO NOT use:
-             * userRepository.findByPhone(...)
-             */
-            User user =
-                    userRepository
-                            .findByEmail(email)
-                            .orElse(null);
+            User user = userRepository
+                    .findByEmail(email)
+                    .orElse(null);
 
             if (user == null) {
-
                 return ResponseEntity.status(404)
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "User account not found."
-                                )
-                        );
+                        .body(Map.of(
+                                "success", false,
+                                "message",
+                                "User account not found."
+                        ));
             }
 
-            String savedPhone =
-                    user.getPhone() == null
-                            ? ""
-                            : user.getPhone()
-                                    .replaceAll("\\D", "");
+            String savedPhone = user.getPhone() == null
+                    ? ""
+                    : user.getPhone().replaceAll("\\D", "");
 
-            /*
-             * If account has no phone,
-             * store the provided phone.
-             */
             if (savedPhone.isBlank()) {
-
                 user.setPhone(cleanPhone);
+            } else if (!savedPhone.equals(cleanPhone)) {
 
-            } else {
-
-                /*
-                 * Existing account must use
-                 * its own registered mobile.
-                 */
-                if (!savedPhone.equals(cleanPhone)) {
-
-                    return ResponseEntity.badRequest()
-                            .body(
-                                    Map.of(
-                                            "success", false,
-                                            "message",
-                                            "Mobile number does not match this account."
-                                    )
-                            );
-                }
+                return badRequest(
+                        "Mobile number does not match this account."
+                );
             }
 
-            // -------------------------------------------------
-            // GENERATE OTP
-            // -------------------------------------------------
-
-            String otp =
-                    generateOtp();
+            String otp = generateOtp();
 
             user.setMobileOtp(otp);
 
             user.setMobileOtpExpiry(
-                    LocalDateTime.now()
-                            .plusMinutes(5)
+                    LocalDateTime.now().plusMinutes(5)
             );
 
             user.setMobileVerified(false);
 
             userRepository.save(user);
 
-            // -------------------------------------------------
-            // DEVELOPMENT LOG
-            // -------------------------------------------------
-
             System.out.println();
             System.out.println(
                     "=============================================="
             );
-            System.out.println(
-                    "QUICKBITE MOBILE OTP"
-            );
-            System.out.println(
-                    "Email: " + email
-            );
-            System.out.println(
-                    "Mobile: " + cleanPhone
-            );
-            System.out.println(
-                    "Development OTP: " + otp
-            );
-            System.out.println(
-                    "Expires: 5 minutes"
-            );
+            System.out.println("QUICKBITE MOBILE OTP");
+            System.out.println("Email: " + email);
+            System.out.println("Mobile: " + cleanPhone);
+            System.out.println("Development OTP: " + otp);
+            System.out.println("Expires: 5 minutes");
             System.out.println(
                     "=============================================="
             );
             System.out.println();
 
-            /*
-             * Development-only response.
-             *
-             * No SMS provider is connected yet.
-             */
             return ResponseEntity.ok(
                     Map.of(
                             "success", true,
@@ -554,17 +330,15 @@ public class AuthController {
             e.printStackTrace();
 
             return ResponseEntity.status(500)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Unable to send mobile OTP.",
-                                    "error",
-                                    e.getMessage() == null
-                                            ? "Unknown server error"
-                                            : e.getMessage()
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "Unable to send mobile OTP.",
+                            "error",
+                            e.getMessage() == null
+                                    ? "Unknown server error"
+                                    : e.getMessage()
+                    ));
         }
     }
 
@@ -580,99 +354,52 @@ public class AuthController {
         if (request == null ||
                 request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email is required."
-                            )
-                    );
+            return badRequest("Email is required.");
         }
 
         if (request.getOtp() == null ||
                 request.getOtp().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Mobile OTP is required."
-                            )
-                    );
+            return badRequest("Mobile OTP is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        String otp =
-                request.getOtp()
-                        .trim();
+        String otp = request.getOtp().trim();
 
         if (!otp.matches("\\d{6}")) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "OTP must be 6 digits."
-                            )
-                    );
+            return badRequest("OTP must be 6 digits.");
         }
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
         if (user == null) {
-
             return ResponseEntity.status(404)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "User account not found."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "User account not found."
+                    ));
         }
 
         if (user.getMobileOtp() == null ||
                 !user.getMobileOtp().equals(otp)) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Invalid mobile OTP."
-                            )
-                    );
+            return badRequest("Invalid mobile OTP.");
         }
 
         if (user.getMobileOtpExpiry() == null ||
                 user.getMobileOtpExpiry()
                         .isBefore(LocalDateTime.now())) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Mobile OTP has expired. Please request a new OTP."
-                            )
-                    );
+            return badRequest(
+                    "Mobile OTP has expired. Please request a new OTP."
+            );
         }
 
         user.setMobileVerified(true);
-
         user.setMobileOtp(null);
-
         user.setMobileOtpExpiry(null);
 
         userRepository.save(user);
@@ -689,7 +416,7 @@ public class AuthController {
     }
 
     // =========================================================
-    // SEND EMAIL OTP
+    // SEND EMAIL OTP - RESEND
     // =========================================================
 
     @PostMapping("/send-email-otp")
@@ -702,47 +429,32 @@ public class AuthController {
             if (request == null ||
                     request.getEmail() == null ||
                     request.getEmail().isBlank()) {
-
-                return ResponseEntity.badRequest()
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "Email is required."
-                                )
-                        );
+                return badRequest("Email is required.");
             }
 
-            String email =
-                    request.getEmail()
-                            .trim()
-                            .toLowerCase();
+            String email = request.getEmail()
+                    .trim()
+                    .toLowerCase();
 
-            User user =
-                    userRepository
-                            .findByEmail(email)
-                            .orElse(null);
+            User user = userRepository
+                    .findByEmail(email)
+                    .orElse(null);
 
             if (user == null) {
-
                 return ResponseEntity.status(404)
-                        .body(
-                                Map.of(
-                                        "success", false,
-                                        "message",
-                                        "User account not found."
-                                )
-                        );
+                        .body(Map.of(
+                                "success", false,
+                                "message",
+                                "User account not found."
+                        ));
             }
 
-            String otp =
-                    generateOtp();
+            String otp = generateOtp();
 
             user.setEmailOtp(otp);
 
             user.setEmailOtpExpiry(
-                    LocalDateTime.now()
-                            .plusMinutes(5)
+                    LocalDateTime.now().plusMinutes(5)
             );
 
             user.setEmailVerified(false);
@@ -753,22 +465,16 @@ public class AuthController {
             System.out.println(
                     "=============================================="
             );
+            System.out.println("QUICKBITE EMAIL OTP");
             System.out.println(
-                    "QUICKBITE EMAIL OTP"
-            );
-            System.out.println(
-                    "Sending verification email to: "
-                            + email
+                    "Sending verification email to: " + email
             );
             System.out.println(
                     "=============================================="
             );
 
-            sendVerificationEmail(
-                    email,
-                    user.getName(),
-                    otp
-            );
+            // Resend email service
+            emailService.sendOtpEmail(email, otp);
 
             System.out.println(
                     "Email OTP sent successfully."
@@ -784,35 +490,20 @@ public class AuthController {
                     )
             );
 
-        } catch (MessagingException e) {
-
-            e.printStackTrace();
-
-            return ResponseEntity.status(500)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Unable to send email OTP. Please check email configuration."
-                            )
-                    );
-
         } catch (Exception e) {
 
             e.printStackTrace();
 
             return ResponseEntity.status(500)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Unable to send email OTP.",
-                                    "error",
-                                    e.getMessage() == null
-                                            ? "Unknown server error"
-                                            : e.getMessage()
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "Unable to send email OTP.",
+                            "error",
+                            e.getMessage() == null
+                                    ? "Unknown server error"
+                                    : e.getMessage()
+                    ));
         }
     }
 
@@ -828,99 +519,52 @@ public class AuthController {
         if (request == null ||
                 request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email is required."
-                            )
-                    );
+            return badRequest("Email is required.");
         }
 
         if (request.getOtp() == null ||
                 request.getOtp().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email OTP is required."
-                            )
-                    );
+            return badRequest("Email OTP is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        String otp =
-                request.getOtp()
-                        .trim();
+        String otp = request.getOtp().trim();
 
         if (!otp.matches("\\d{6}")) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "OTP must be 6 digits."
-                            )
-                    );
+            return badRequest("OTP must be 6 digits.");
         }
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
         if (user == null) {
-
             return ResponseEntity.status(404)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "User account not found."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "User account not found."
+                    ));
         }
 
         if (user.getEmailOtp() == null ||
                 !user.getEmailOtp().equals(otp)) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Invalid email OTP."
-                            )
-                    );
+            return badRequest("Invalid email OTP.");
         }
 
         if (user.getEmailOtpExpiry() == null ||
                 user.getEmailOtpExpiry()
                         .isBefore(LocalDateTime.now())) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email OTP has expired. Please request a new OTP."
-                            )
-                    );
+            return badRequest(
+                    "Email OTP has expired. Please request a new OTP."
+            );
         }
 
         user.setEmailVerified(true);
-
         user.setEmailOtp(null);
-
         user.setEmailOtpExpiry(null);
 
         userRepository.save(user);
@@ -948,67 +592,48 @@ public class AuthController {
         if (request == null ||
                 request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email is required."
-                            )
-                    );
+            return badRequest("Email is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
         if (user == null) {
-
             return ResponseEntity.status(404)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "User account not found."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "User account not found."
+                    ));
         }
 
         if (!user.isEmailVerified() ||
                 !user.isMobileVerified()) {
 
             return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Please verify both email and mobile number first.",
-                                    "emailVerified",
-                                    user.isEmailVerified(),
-                                    "mobileVerified",
-                                    user.isMobileVerified()
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "Please verify both email and mobile number first.",
+                            "emailVerified",
+                            user.isEmailVerified(),
+                            "mobileVerified",
+                            user.isMobileVerified()
+                    ));
         }
-
-        userRepository.save(user);
 
         return ResponseEntity.ok(
                 Map.of(
                         "success", true,
                         "message",
                         "Account verification completed successfully.",
-                        "emailVerified",
-                        true,
-                        "mobileVerified",
-                        true,
+                        "emailVerified", true,
+                        "mobileVerified", true,
                         "user",
                         createUserResponse(user)
                 )
@@ -1016,7 +641,7 @@ public class AuthController {
     }
 
     // =========================================================
-    // FORGOT PASSWORD
+    // FORGOT PASSWORD - RESEND
     // =========================================================
 
     @PostMapping("/forgot-password")
@@ -1027,32 +652,19 @@ public class AuthController {
         if (request == null ||
                 request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
-            return ResponseEntity.badRequest()
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Email is required."
-                            )
-                    );
+            return badRequest("Email is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
-        /*
-         * Do not expose whether email exists.
-         */
+        // Do not expose whether account exists.
         if (user == null) {
-
             return ResponseEntity.ok(
                     Map.of(
                             "success", true,
@@ -1064,19 +676,16 @@ public class AuthController {
 
         tokenRepository.deleteByEmail(email);
 
-        String otp =
-                generateOtp();
+        String otp = generateOtp();
 
         PasswordResetToken resetToken =
                 new PasswordResetToken();
 
         resetToken.setToken(otp);
-
         resetToken.setEmail(email);
 
         resetToken.setExpiryTime(
-                LocalDateTime.now()
-                        .plusMinutes(10)
+                LocalDateTime.now().plusMinutes(10)
         );
 
         resetToken.setUsed(false);
@@ -1085,26 +694,27 @@ public class AuthController {
 
         try {
 
-            sendPasswordResetEmail(
+            emailService.sendPasswordResetOtp(
                     email,
-                    user.getName(),
                     otp
             );
 
-        } catch (MessagingException e) {
+        } catch (Exception e) {
 
             e.printStackTrace();
 
             tokenRepository.deleteByEmail(email);
 
             return ResponseEntity.status(500)
-                    .body(
-                            Map.of(
-                                    "success", false,
-                                    "message",
-                                    "Unable to send password reset OTP. Please check email configuration."
-                            )
-                    );
+                    .body(Map.of(
+                            "success", false,
+                            "message",
+                            "Unable to send password reset OTP.",
+                            "error",
+                            e.getMessage() == null
+                                    ? "Unknown server error"
+                                    : e.getMessage()
+                    ));
         }
 
         return ResponseEntity.ok(
@@ -1130,58 +740,45 @@ public class AuthController {
         if (request == null ||
                 request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
             return ResponseEntity.badRequest()
                     .body("Email is required.");
         }
 
         if (request.getOtp() == null ||
                 request.getOtp().isBlank()) {
-
             return ResponseEntity.badRequest()
                     .body("OTP is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        String otp =
-                request.getOtp()
-                        .trim();
+        String otp = request.getOtp().trim();
 
         if (!otp.matches("\\d{6}")) {
-
             return ResponseEntity.badRequest()
                     .body("OTP must be 6 digits.");
         }
 
         PasswordResetToken resetToken =
-                tokenRepository
-                        .findByToken(otp)
+                tokenRepository.findByToken(otp)
                         .orElse(null);
 
         if (resetToken == null ||
-                !resetToken.getEmail()
-                        .equals(email)) {
-
+                !resetToken.getEmail().equals(email)) {
             return ResponseEntity.badRequest()
                     .body("Invalid OTP.");
         }
 
         if (resetToken.isUsed()) {
-
             return ResponseEntity.badRequest()
-                    .body(
-                            "This OTP has already been used."
-                    );
+                    .body("This OTP has already been used.");
         }
 
         if (resetToken.getExpiryTime() == null ||
                 resetToken.getExpiryTime()
                         .isBefore(LocalDateTime.now())) {
-
             return ResponseEntity.badRequest()
                     .body(
                             "OTP has expired. Please request a new OTP."
@@ -1211,23 +808,19 @@ public class AuthController {
         if (request == null ||
                 request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
             return ResponseEntity.badRequest()
                     .body("Email is required.");
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
         if (user == null) {
-
             return ResponseEntity.ok(
                     Map.of(
                             "success", true,
@@ -1239,19 +832,16 @@ public class AuthController {
 
         tokenRepository.deleteByEmail(email);
 
-        String otp =
-                generateOtp();
+        String otp = generateOtp();
 
         PasswordResetToken resetToken =
                 new PasswordResetToken();
 
         resetToken.setToken(otp);
-
         resetToken.setEmail(email);
 
         resetToken.setExpiryTime(
-                LocalDateTime.now()
-                        .plusMinutes(10)
+                LocalDateTime.now().plusMinutes(10)
         );
 
         resetToken.setUsed(false);
@@ -1260,13 +850,12 @@ public class AuthController {
 
         try {
 
-            sendPasswordResetEmail(
+            emailService.sendPasswordResetOtp(
                     email,
-                    user.getName(),
                     otp
             );
 
-        } catch (MessagingException e) {
+        } catch (Exception e) {
 
             e.printStackTrace();
 
@@ -1274,7 +863,7 @@ public class AuthController {
 
             return ResponseEntity.status(500)
                     .body(
-                            "Unable to send OTP email. Please check email configuration."
+                            "Unable to send OTP email."
                     );
         }
 
@@ -1305,74 +894,59 @@ public class AuthController {
 
         if (request.getEmail() == null ||
                 request.getEmail().isBlank()) {
-
             return ResponseEntity.badRequest()
                     .body("Email is required.");
         }
 
         if (request.getOtp() == null ||
                 request.getOtp().isBlank()) {
-
             return ResponseEntity.badRequest()
                     .body("OTP is required.");
         }
 
         if (request.getNewPassword() == null ||
                 request.getNewPassword().length() < 6) {
-
             return ResponseEntity.badRequest()
                     .body(
                             "Password must be at least 6 characters."
                     );
         }
 
-        String email =
-                request.getEmail()
-                        .trim()
-                        .toLowerCase();
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase();
 
-        String otp =
-                request.getOtp()
-                        .trim();
+        String otp = request.getOtp().trim();
 
         PasswordResetToken resetToken =
-                tokenRepository
-                        .findByToken(otp)
+                tokenRepository.findByToken(otp)
                         .orElse(null);
 
         if (resetToken == null ||
-                !resetToken.getEmail()
-                        .equals(email)) {
-
+                !resetToken.getEmail().equals(email)) {
             return ResponseEntity.badRequest()
                     .body("Invalid OTP.");
         }
 
         if (resetToken.isUsed()) {
-
             return ResponseEntity.badRequest()
-                    .body(
-                            "This OTP has already been used."
-                    );
+                    .body("This OTP has already been used.");
         }
 
         if (resetToken.getExpiryTime() == null ||
                 resetToken.getExpiryTime()
                         .isBefore(LocalDateTime.now())) {
-
             return ResponseEntity.badRequest()
                     .body(
                             "OTP has expired. Please request a new OTP."
                     );
         }
 
-        User user =
-                userRepository
-                        .findByEmail(email)
-                        .orElse(null);
+        User user = userRepository
+                .findByEmail(email)
+                .orElse(null);
 
         if (user == null) {
-
             return ResponseEntity.badRequest()
                     .body("User account not found.");
         }
@@ -1386,7 +960,6 @@ public class AuthController {
         userRepository.save(user);
 
         resetToken.setUsed(true);
-
         tokenRepository.save(resetToken);
 
         return ResponseEntity.ok(
@@ -1412,372 +985,6 @@ public class AuthController {
     }
 
     // =========================================================
-    // EMAIL VERIFICATION MESSAGE
-    // =========================================================
-
-    private void sendVerificationEmail(
-            String email,
-            String name,
-            String otp
-    ) throws MessagingException {
-
-        MimeMessage message =
-                mailSender.createMimeMessage();
-
-        MimeMessageHelper helper =
-                new MimeMessageHelper(
-                        message,
-                        true,
-                        "UTF-8"
-                );
-
-        helper.setTo(email);
-
-        helper.setSubject(
-                "QuickBite - Email Verification OTP"
-        );
-
-        String safeName =
-                name == null ||
-                        name.isBlank()
-                        ? "QuickBite User"
-                        : name;
-
-        String html = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <style>
-
-                        body {
-                            margin: 0;
-                            padding: 0;
-                            background: #f5f5f5;
-                            font-family: Arial, sans-serif;
-                        }
-
-                        .container {
-                            max-width: 560px;
-                            margin: 40px auto;
-                            background: #ffffff;
-                            border-radius: 18px;
-                            overflow: hidden;
-                            box-shadow:
-                                0 10px 30px
-                                rgba(0,0,0,0.08);
-                        }
-
-                        .header {
-                            background: #ff4d2d;
-                            color: white;
-                            padding: 28px;
-                            text-align: center;
-                        }
-
-                        .logo {
-                            font-size: 28px;
-                            font-weight: bold;
-                        }
-
-                        .content {
-                            padding: 35px;
-                            color: #222222;
-                        }
-
-                        .otp {
-                            margin: 25px 0;
-                            padding: 18px;
-                            background: #fff3ef;
-                            border: 2px dashed #ff4d2d;
-                            border-radius: 12px;
-                            text-align: center;
-                            font-size: 34px;
-                            font-weight: bold;
-                            letter-spacing: 8px;
-                            color: #ff4d2d;
-                        }
-
-                        .warning {
-                            color: #777777;
-                            font-size: 14px;
-                            line-height: 1.6;
-                        }
-
-                        .footer {
-                            padding: 20px;
-                            text-align: center;
-                            background: #fafafa;
-                            color: #888888;
-                            font-size: 12px;
-                        }
-
-                    </style>
-                </head>
-
-                <body>
-
-                    <div class="container">
-
-                        <div class="header">
-
-                            <div class="logo">
-                                🍔 QuickBite
-                            </div>
-
-                            <div>
-                                Email Verification
-                            </div>
-
-                        </div>
-
-                        <div class="content">
-
-                            <h2>
-                                Hello %s 👋
-                            </h2>
-
-                            <p>
-                                Welcome to QuickBite.
-                                Please verify your email
-                                address using the OTP below.
-                            </p>
-
-                            <div class="otp">
-                                %s
-                            </div>
-
-                            <p>
-                                This OTP is valid for
-                                <strong>5 minutes</strong>.
-                            </p>
-
-                            <p class="warning">
-                                Never share this OTP with anyone.
-                                If you did not request this verification,
-                                please ignore this email.
-                            </p>
-
-                        </div>
-
-                        <div class="footer">
-                            © QuickBite. All rights reserved.
-                        </div>
-
-                    </div>
-
-                </body>
-                </html>
-                """
-                .formatted(
-                        escapeHtml(safeName),
-                        otp
-                );
-
-        helper.setText(
-                html,
-                true
-        );
-
-        mailSender.send(message);
-    }
-
-    // =========================================================
-    // PASSWORD RESET EMAIL
-    // =========================================================
-
-    private void sendPasswordResetEmail(
-            String email,
-            String name,
-            String otp
-    ) throws MessagingException {
-
-        MimeMessage message =
-                mailSender.createMimeMessage();
-
-        MimeMessageHelper helper =
-                new MimeMessageHelper(
-                        message,
-                        true,
-                        "UTF-8"
-                );
-
-        helper.setTo(email);
-
-        helper.setSubject(
-                "QuickBite - Password Reset OTP"
-        );
-
-        String safeName =
-                name == null ||
-                        name.isBlank()
-                        ? "QuickBite User"
-                        : name;
-
-        String html = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-
-                    <meta charset="UTF-8">
-
-                    <style>
-
-                        body {
-                            margin: 0;
-                            padding: 0;
-                            background: #f5f5f5;
-                            font-family: Arial, sans-serif;
-                        }
-
-                        .container {
-                            max-width: 560px;
-                            margin: 40px auto;
-                            background: #ffffff;
-                            border-radius: 18px;
-                            overflow: hidden;
-                            box-shadow:
-                                0 10px 30px
-                                rgba(0,0,0,0.08);
-                        }
-
-                        .header {
-                            background: #ff4d2d;
-                            color: white;
-                            padding: 28px;
-                            text-align: center;
-                        }
-
-                        .logo {
-                            font-size: 28px;
-                            font-weight: bold;
-                        }
-
-                        .content {
-                            padding: 35px;
-                            color: #222222;
-                        }
-
-                        .otp {
-                            margin: 25px 0;
-                            padding: 18px;
-                            background: #fff3ef;
-                            border: 2px dashed #ff4d2d;
-                            border-radius: 12px;
-                            text-align: center;
-                            font-size: 34px;
-                            font-weight: bold;
-                            letter-spacing: 8px;
-                            color: #ff4d2d;
-                        }
-
-                        .warning {
-                            color: #777777;
-                            font-size: 14px;
-                            line-height: 1.6;
-                        }
-
-                        .footer {
-                            padding: 20px;
-                            text-align: center;
-                            background: #fafafa;
-                            color: #888888;
-                            font-size: 12px;
-                        }
-
-                    </style>
-
-                </head>
-
-                <body>
-
-                    <div class="container">
-
-                        <div class="header">
-
-                            <div class="logo">
-                                🍔 QuickBite
-                            </div>
-
-                            <div>
-                                Password Reset
-                            </div>
-
-                        </div>
-
-                        <div class="content">
-
-                            <h2>
-                                Hello %s 👋
-                            </h2>
-
-                            <p>
-                                We received a request to reset
-                                your QuickBite account password.
-                            </p>
-
-                            <p>
-                                Your verification OTP is:
-                            </p>
-
-                            <div class="otp">
-                                %s
-                            </div>
-
-                            <p>
-                                This OTP will expire in
-                                <strong>10 minutes</strong>.
-                            </p>
-
-                            <p class="warning">
-                                If you did not request a password reset,
-                                you can safely ignore this email.
-                                Never share your OTP with anyone.
-                            </p>
-
-                        </div>
-
-                        <div class="footer">
-                            © QuickBite. All rights reserved.
-                        </div>
-
-                    </div>
-
-                </body>
-                </html>
-                """
-                .formatted(
-                        escapeHtml(safeName),
-                        otp
-                );
-
-        helper.setText(
-                html,
-                true
-        );
-
-        mailSender.send(message);
-    }
-
-    // =========================================================
-    // ESCAPE HTML
-    // =========================================================
-
-    private String escapeHtml(String value) {
-
-        if (value == null) {
-            return "";
-        }
-
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
-    }
-
-    // =========================================================
     // USER RESPONSE
     // =========================================================
 
@@ -1788,35 +995,12 @@ public class AuthController {
         Map<String, Object> response =
                 new HashMap<>();
 
-        response.put(
-                "id",
-                user.getId()
-        );
-
-        response.put(
-                "name",
-                user.getName()
-        );
-
-        response.put(
-                "email",
-                user.getEmail()
-        );
-
-        response.put(
-                "phone",
-                user.getPhone()
-        );
-
-        response.put(
-                "address",
-                user.getAddress()
-        );
-
-        response.put(
-                "role",
-                user.getRole()
-        );
+        response.put("id", user.getId());
+        response.put("name", user.getName());
+        response.put("email", user.getEmail());
+        response.put("phone", user.getPhone());
+        response.put("address", user.getAddress());
+        response.put("role", user.getRole());
 
         response.put(
                 "emailVerified",
@@ -1834,10 +1018,6 @@ public class AuthController {
     // =========================================================
     // LOGIN RESPONSE
     // =========================================================
-    //
-    // Generates JWT only after both email and mobile
-    // verification have been completed.
-    // =========================================================
 
     private Map<String, Object> createLoginResponse(
             User user
@@ -1846,11 +1026,7 @@ public class AuthController {
         Map<String, Object> response =
                 new HashMap<>();
 
-        response.put(
-                "success",
-                true
-        );
-
+        response.put("success", true);
         response.put(
                 "message",
                 "Login successful."
@@ -1861,30 +1037,11 @@ public class AuthController {
                 createUserResponse(user)
         );
 
-        response.put(
-                "id",
-                user.getId()
-        );
-
-        response.put(
-                "name",
-                user.getName()
-        );
-
-        response.put(
-                "email",
-                user.getEmail()
-        );
-
-        response.put(
-                "phone",
-                user.getPhone()
-        );
-
-        response.put(
-                "role",
-                user.getRole()
-        );
+        response.put("id", user.getId());
+        response.put("name", user.getName());
+        response.put("email", user.getEmail());
+        response.put("phone", user.getPhone());
+        response.put("role", user.getRole());
 
         response.put(
                 "emailVerified",
@@ -1896,9 +1053,6 @@ public class AuthController {
                 user.isMobileVerified()
         );
 
-        /*
-         * Generate JWT for authenticated API requests.
-         */
         String role =
                 user.getRole() == null ||
                         user.getRole().isBlank()
@@ -1911,12 +1065,24 @@ public class AuthController {
                         role
                 );
 
-        response.put(
-                "token",
-                token
-        );
+        response.put("token", token);
 
         return response;
+    }
+
+    // =========================================================
+    // BAD REQUEST HELPER
+    // =========================================================
+
+    private ResponseEntity<?> badRequest(
+            String message
+    ) {
+
+        return ResponseEntity.badRequest()
+                .body(Map.of(
+                        "success", false,
+                        "message", message
+                ));
     }
 
     // =========================================================
@@ -2005,7 +1171,7 @@ public class AuthController {
     }
 
     // =========================================================
-    // DTO - MOBILE OTP REQUEST
+    // DTO - MOBILE OTP
     // =========================================================
 
     public static class MobileOtpRequest {
@@ -2034,7 +1200,7 @@ public class AuthController {
     }
 
     // =========================================================
-    // DTO - EMAIL OTP REQUEST
+    // DTO - EMAIL OTP
     // =========================================================
 
     public static class EmailOtpRequest {

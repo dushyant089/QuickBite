@@ -10,7 +10,7 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username}")
+    @Value("${spring.mail.username:}")
     private String fromEmail;
 
     public EmailService(JavaMailSender mailSender) {
@@ -26,14 +26,14 @@ public class EmailService {
         message.setSubject("QuickBite - Email Verification OTP");
 
         message.setText(
-                "Hello,\n\n" +
-                "Your QuickBite verification OTP is:\n\n" +
-                otp + "\n\n" +
-                "This OTP is valid for 5 minutes.\n\n" +
-                "Please do not share this OTP with anyone.\n\n" +
-                "If you did not request this verification, please ignore this email.\n\n" +
-                "Regards,\n" +
-                "QuickBite Team"
+                "Hello,\n\n"
+                        + "Your QuickBite verification OTP is:\n\n"
+                        + otp + "\n\n"
+                        + "This OTP is valid for 5 minutes.\n\n"
+                        + "Please do not share this OTP with anyone.\n\n"
+                        + "If you did not request this verification, please ignore this email.\n\n"
+                        + "Regards,\n"
+                        + "QuickBite Team"
         );
 
         mailSender.send(message);
@@ -48,13 +48,13 @@ public class EmailService {
         message.setSubject("QuickBite - Password Reset OTP");
 
         message.setText(
-                "Hello,\n\n" +
-                "Your QuickBite password reset OTP is:\n\n" +
-                otp + "\n\n" +
-                "This OTP is valid for 5 minutes.\n\n" +
-                "If you did not request a password reset, please ignore this email.\n\n" +
-                "Regards,\n" +
-                "QuickBite Team"
+                "Hello,\n\n"
+                        + "Your QuickBite password reset OTP is:\n\n"
+                        + otp + "\n\n"
+                        + "This OTP is valid for 5 minutes.\n\n"
+                        + "If you did not request a password reset, please ignore this email.\n\n"
+                        + "Regards,\n"
+                        + "QuickBite Team"
         );
 
         mailSender.send(message);
