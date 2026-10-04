@@ -1,0 +1,49 @@
+# QuickBite - Root Git Ignore
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+**/src/main/resources/application-local.properties
+**/src/main/resources/application.properties.backup
+**/*.secret
+**/*.key
+**/*.pem
+
+# Java / Spring Boot
+**/target/
+
+# Node / React
+**/node_modules/
+**/build/
+**/.cache/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*~
+# ------------------------------
+# Local Maven / temporary files
+# ------------------------------
+**/apache-maven-3.9.16/
+**/apache-maven-3.9.16-bin.zip
+**/maven.zip
+**/classpath.txt
+
+# Temporary test files
+**/SmtpTest.java
