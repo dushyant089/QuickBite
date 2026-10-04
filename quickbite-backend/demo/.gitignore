@@ -11,7 +11,6 @@
 
 # Backend local configuration / secrets
 **/src/main/resources/application-local.properties
-**/src/main/resources/application.properties
 **/src/main/resources/application.properties.backup
 **/*.secret
 **/*.key
