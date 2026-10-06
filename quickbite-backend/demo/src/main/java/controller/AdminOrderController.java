@@ -14,7 +14,7 @@ import java.util.List;
 @RequestMapping("/api/orders")
 @CrossOrigin(origins = {
         "http://localhost:3000",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000", "https://quickbite-frontend-beta.vercel.app"
 })
 public class AdminOrderController {
 
