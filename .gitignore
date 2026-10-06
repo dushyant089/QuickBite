@@ -47,3 +47,7 @@ Thumbs.db
 
 # Temporary test files
 **/SmtpTest.java
+
+# QuickBite local secrets / database backup
+gmail-oauth/
+quickbite_db_backup.sql
